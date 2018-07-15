@@ -21,11 +21,14 @@ import org.apache.accumulo.minicluster.MiniAccumuloConfig;
 import org.apache.flink.api.java.ExecutionEnvironment;
 import org.gradoop.common.config.GradoopAccumuloConfig;
 import org.gradoop.common.storage.impl.accumulo.basic.StoreTest;
+import org.gradoop.common.storage.impl.accumulo.constants.GradoopAccumuloProperty;
 import org.gradoop.common.storage.impl.accumulo.predicate.StoreBasicPredicateTest;
 import org.gradoop.common.storage.impl.accumulo.predicate.StoreIdsPredicateTest;
 import org.gradoop.common.storage.impl.accumulo.predicate.StoreLabelPredicateTest;
 import org.gradoop.common.storage.impl.accumulo.predicate.StorePropPredicateTest;
 import org.gradoop.flink.io.impl.accumulo.IOBasicTest;
+import org.gradoop.flink.io.impl.accumulo.adjacency.IOAdjacencyImportTest;
+import org.gradoop.flink.io.impl.accumulo.adjacency.IOAdjacencyQueryTest;
 import org.gradoop.flink.io.impl.accumulo.source.IOEdgePredicateTest;
 import org.gradoop.flink.io.impl.accumulo.source.IOGraphPredicateTest;
 import org.gradoop.flink.io.impl.accumulo.source.IOVertexPredicateTest;
@@ -39,8 +42,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
-
-import static org.gradoop.common.config.GradoopAccumuloConfig.*;
 
 /**
  * gradoop accumulo test suit
@@ -58,7 +59,10 @@ import static org.gradoop.common.config.GradoopAccumuloConfig.*;
   IOBasicTest.class,
   IOEdgePredicateTest.class,
   IOVertexPredicateTest.class,
-  IOGraphPredicateTest.class
+  IOGraphPredicateTest.class,
+  //adjacency
+  IOAdjacencyImportTest.class,
+  IOAdjacencyQueryTest.class,
 })
 public class AccumuloTestSuite {
 
@@ -100,24 +104,24 @@ public class AccumuloTestSuite {
     String prefix
   ) {
     return GradoopAccumuloConfig.getDefaultConfig(env)
-      .set(ACCUMULO_USER, "root")
-      .set(ACCUMULO_INSTANCE, accumulo.getInstanceName())
-      .set(ZOOKEEPER_HOSTS, accumulo.getZooKeepers())
-      .set(ACCUMULO_PASSWD, accumulo.getConfig().getRootPassword())
-      .set(ACCUMULO_TABLE_PREFIX, TEST_NAMESPACE_PREFIX + "." + prefix);
+      .set(GradoopAccumuloProperty.ACCUMULO_USER, "root")
+      .set(GradoopAccumuloProperty.ACCUMULO_INSTANCE, accumulo.getInstanceName())
+      .set(GradoopAccumuloProperty.ZOOKEEPER_HOSTS, accumulo.getZooKeepers())
+      .set(GradoopAccumuloProperty.ACCUMULO_PASSWD, accumulo.getConfig().getRootPassword())
+      .set(GradoopAccumuloProperty.ACCUMULO_TABLE_PREFIX, TEST_NAMESPACE_PREFIX + "." + prefix);
     //those are configure default ⤵
-    //.set(ACCUMULO_AUTHORIZATIONS, Authorizations.EMPTY)
-    //.set(GRADOOP_BATCH_SCANNER_THREADS, 10)
-    //.set(GRADOOP_ITERATOR_PRIORITY, 0xf);
+    //.set(GradoopAccumuloProperty.ACCUMULO_AUTHORIZATIONS, Authorizations.EMPTY)
+    //.set(GradoopAccumuloProperty.GRADOOP_BATCH_SCANNER_THREADS, 10)
+    //.set(GradoopAccumuloProperty.GRADOOP_ITERATOR_PRIORITY, 0xf);
 
     //or you can change to your own test env, please copy gradoop-accumulo jar to your accumulo
     //runtime lib dir => $ACCUMULO_HOME/lib/ext
     //return GradoopAccumuloConfig.getDefaultConfig(env)
-    //  .set(ZOOKEEPER_HOSTS, "docker2:2181")
-    //  .set(ACCUMULO_INSTANCE, "instance")
-    //  .set(ACCUMULO_PASSWD, "root")
-    //  .set(ACCUMULO_USER, "root")
-    //  .set(ACCUMULO_TABLE_PREFIX, TEST_NAMESPACE_PREFIX + "." + prefix);
+    //  .set(GradoopAccumuloProperty.ZOOKEEPER_HOSTS, "docker2:2181")
+    //  .set(GradoopAccumuloProperty.ACCUMULO_INSTANCE, "instance")
+    //  .set(GradoopAccumuloProperty.ACCUMULO_PASSWD, "root")
+    //  .set(GradoopAccumuloProperty.ACCUMULO_USER, "root")
+    //  .set(GradoopAccumuloProperty.ACCUMULO_TABLE_PREFIX, TEST_NAMESPACE_PREFIX + "." + prefix);
   }
 
   /**

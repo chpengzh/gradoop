@@ -16,10 +16,12 @@
 
 package org.gradoop.common.storage.api;
 
+import org.gradoop.common.model.impl.id.GradoopIdSet;
 import org.gradoop.common.model.impl.pojo.Edge;
 import org.gradoop.common.model.impl.pojo.GraphHead;
 import org.gradoop.common.model.impl.pojo.Vertex;
 import org.gradoop.common.storage.iterator.ClosableIterator;
+import org.gradoop.common.model.impl.AdjacencyRow;
 import org.gradoop.common.storage.predicate.filter.api.ElementFilter;
 import org.gradoop.common.storage.predicate.query.ElementQuery;
 
@@ -137,5 +139,39 @@ public interface EPGMGraphPredictableOutput<
     @Nullable ElementQuery<EFilter> query,
     int cacheSize
   ) throws IOException;
+
+  /**
+   * Returns a set of vertex ids that relative to edge seeds
+   *
+   * @param edgeSeeds edge seed id set
+   * @param fetchEdgeSource should result contains edge's source vertex
+   * @param fetchEdgeTarget should result contains edge's target vertex
+   * @return tuple for {edge_id,vertex_id}
+   */
+  @Nonnull
+  default ClosableIterator<AdjacencyRow> adjacentFromEdges(
+    @Nonnull GradoopIdSet edgeSeeds,
+    boolean fetchEdgeSource,
+    boolean fetchEdgeTarget
+  ) throws IOException {
+    throw new UnsupportedOperationException("not implement yet");
+  }
+
+  /**
+   * Returns a set if edge ids that relative to vertex seeds
+   *
+   * @param vertexSeeds vertex seed id set
+   * @param fetchEdgeIn should result contains vertex's income edge
+   * @param fetchEdgeOut should result contains vertex's outcome edge
+   * @return relative edge id set
+   */
+  @Nonnull
+  default ClosableIterator<AdjacencyRow> adjacentFromVertices(
+    @Nonnull GradoopIdSet vertexSeeds,
+    boolean fetchEdgeIn,
+    boolean fetchEdgeOut
+  ) throws IOException {
+    throw new UnsupportedOperationException("not implement yet");
+  }
 
 }

@@ -168,6 +168,13 @@
 
         <dependency>
             <groupId>org.gradoop</groupId>
+            <artifactId>gradoop-store-api</artifactId>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.gradoop</groupId>
             <artifactId>gradoop-flink</artifactId>
             <type>test-jar</type>
             <scope>test</scope>

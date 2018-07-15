@@ -28,9 +28,8 @@ import org.apache.accumulo.core.client.security.tokens.PasswordToken;
 import org.apache.accumulo.core.data.Mutation;
 import org.apache.flink.api.common.io.OutputFormat;
 import org.apache.flink.configuration.Configuration;
-import org.gradoop.common.config.GradoopAccumuloConfig;
 import org.gradoop.common.model.impl.pojo.Element;
-import org.gradoop.common.storage.impl.accumulo.constants.AccumuloDefault;
+import org.gradoop.common.storage.impl.accumulo.constants.GradoopAccumuloProperty;
 
 import java.io.IOException;
 import java.util.Properties;
@@ -56,6 +55,16 @@ public abstract class BaseOutputFormat<E extends Element> implements OutputForma
    * Accumulo batch writer
    */
   private transient BatchWriter writer;
+
+  /**
+   * Client writer cache count
+   */
+  private int cacheCount;
+
+  /**
+   * Configuration's cache block
+   */
+  private int cacheBlock;
 
   /**
    * Create a new output format for gradoop element
@@ -97,16 +106,12 @@ public abstract class BaseOutputFormat<E extends Element> implements OutputForma
     int taskNumber,
     int numTasks
   ) {
-    String user = (String) properties
-      .getOrDefault(GradoopAccumuloConfig.ACCUMULO_USER, AccumuloDefault.USER);
-    String password = (String) properties
-      .getOrDefault(GradoopAccumuloConfig.ACCUMULO_PASSWD, AccumuloDefault.PASSWORD);
-    String instance = (String) properties
-      .getOrDefault(GradoopAccumuloConfig.ACCUMULO_INSTANCE, AccumuloDefault.INSTANCE);
-    String zkHosts = (String) properties
-      .getOrDefault(GradoopAccumuloConfig.ZOOKEEPER_HOSTS, AccumuloDefault.INSTANCE);
-    String tableName = getTableName((String) properties
-      .getOrDefault(GradoopAccumuloConfig.ACCUMULO_TABLE_PREFIX, AccumuloDefault.TABLE_PREFIX));
+    String user = GradoopAccumuloProperty.ACCUMULO_USER.get(properties);
+    String password = GradoopAccumuloProperty.ACCUMULO_PASSWD.get(properties);
+    String instance = GradoopAccumuloProperty.ACCUMULO_INSTANCE.get(properties);
+    String zkHosts = GradoopAccumuloProperty.ZOOKEEPER_HOSTS.get(properties);
+    String tableName = getTableName(GradoopAccumuloProperty.ACCUMULO_TABLE_PREFIX.get(properties));
+    cacheBlock = GradoopAccumuloProperty.GRADOOP_SINK_CACHE_BLOCK.get(properties);
     try {
       //create connector
       Connector conn = new ZooKeeperInstance(instance, zkHosts)
@@ -124,6 +129,9 @@ public abstract class BaseOutputFormat<E extends Element> implements OutputForma
     try {
       Mutation mutation = writeMutation(record);
       writer.addMutation(mutation);
+      if (cacheCount % cacheBlock == 0) {
+        writer.flush();
+      }
     } catch (MutationsRejectedException e) {
       throw new IOException(e);
     }
@@ -133,6 +141,7 @@ public abstract class BaseOutputFormat<E extends Element> implements OutputForma
   public final void close() throws IOException {
     if (writer != null) {
       try {
+        writer.flush();
         writer.close();
       } catch (MutationsRejectedException e) {
         throw new IOException(e);

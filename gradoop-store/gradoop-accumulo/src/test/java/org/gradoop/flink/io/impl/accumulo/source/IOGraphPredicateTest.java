@@ -43,7 +43,7 @@ public class IOGraphPredicateTest extends AccumuloStoreTestBase {
    */
   @Test
   public void test01_queryGraphByProperty() throws Throwable {
-    doTest(TEST01, (loader, store) -> {
+    storeImportAndTest(TEST01, (loader, store) -> {
       List<GraphHead> storeGraphs = loader.getGraphHeads().stream()
         .filter(it -> {
           assert it.getProperties() != null;
@@ -74,7 +74,7 @@ public class IOGraphPredicateTest extends AccumuloStoreTestBase {
    */
   @Test
   public void test02_queryByMulti() throws Throwable {
-    doTest(TEST02, (loader, store) -> {
+    storeImportAndTest(TEST02, (loader, store) -> {
       List<GraphHead> storeGraphs = loader.getGraphHeads().stream()
         .filter(it -> Objects.equals(it.getLabel(), "Community"))
         .filter(it -> it.getProperties() != null)

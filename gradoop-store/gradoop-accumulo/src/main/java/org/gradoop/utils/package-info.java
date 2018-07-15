@@ -14,4 +14,4 @@
  * limitations under the License.
  */
 
-package org.gradoop.flink.io.impl.accumulo.source;
+package org.gradoop.utils;

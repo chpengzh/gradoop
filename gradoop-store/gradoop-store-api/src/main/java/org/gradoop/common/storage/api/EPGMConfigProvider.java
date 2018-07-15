@@ -53,4 +53,13 @@ public interface EPGMConfigProvider<C extends GradoopStoreConfig> {
    */
   String getGraphHeadName();
 
+  /**
+   * Returns the table name where adjacency data is stored.
+   *
+   * @return adjacency data table name
+   */
+  default String getAdjacencyTableName() {
+    throw new UnsupportedOperationException("adjacency table is not support");
+  }
+
 }

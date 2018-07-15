@@ -18,9 +18,8 @@ package org.gradoop.flink.io.impl.accumulo.outputformats;
 
 import org.apache.accumulo.core.data.Mutation;
 import org.gradoop.common.model.impl.pojo.Edge;
-import org.gradoop.common.model.impl.pojo.VertexFactory;
 import org.gradoop.common.storage.impl.accumulo.constants.AccumuloTables;
-import org.gradoop.common.storage.impl.accumulo.handler.AccumuloVertexHandler;
+import org.gradoop.common.storage.impl.accumulo.handler.AccumuloAdjacencyHandler;
 
 import java.util.Properties;
 
@@ -37,7 +36,7 @@ public class EdgeOutOutputFormat extends BaseOutputFormat<Edge> {
   /**
    * vertex handler
    */
-  private transient AccumuloVertexHandler handler;
+  private transient AccumuloAdjacencyHandler handler;
 
   /**
    * Create a new output format for gradoop edge-out
@@ -50,19 +49,18 @@ public class EdgeOutOutputFormat extends BaseOutputFormat<Edge> {
 
   @Override
   protected void initiate() {
-    handler = new AccumuloVertexHandler(new VertexFactory());
+    handler = new AccumuloAdjacencyHandler();
   }
 
   @Override
   protected String getTableName(String prefix) {
-    return String.format("%s%s", prefix, AccumuloTables.VERTEX);
+    return String.format("%s%s", prefix, AccumuloTables.ADJACENCY);
   }
 
   @Override
   protected Mutation writeMutation(Edge record) {
-    //write out mutation
     Mutation mutation = new Mutation(record.getSourceId().toString());
-    mutation = handler.writeLink(mutation, record, false);
+    mutation = handler.writeOutcomeEdge(mutation, record);
     return mutation;
   }
 

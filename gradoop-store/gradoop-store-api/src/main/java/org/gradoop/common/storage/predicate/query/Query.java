@@ -24,9 +24,9 @@ import javax.annotation.Nonnull;
 public class Query {
 
   /**
-   * query element implement
+   * Query element implement
    *
-   * @return element query instance
+   * @return ElementQuery Builder
    */
   @Nonnull
   public static ElementQuery.Builder elements() {

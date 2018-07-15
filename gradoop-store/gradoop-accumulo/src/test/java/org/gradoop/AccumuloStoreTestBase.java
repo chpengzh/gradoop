@@ -18,16 +18,27 @@ package org.gradoop;
 
 import org.gradoop.common.GradoopTestUtils;
 import org.gradoop.common.config.GradoopAccumuloConfig;
+import org.gradoop.common.model.api.entites.EPGMAdjacencyRow;
+import org.gradoop.common.model.impl.AdjacencyRow;
 import org.gradoop.common.model.impl.pojo.Edge;
 import org.gradoop.common.model.impl.pojo.GraphHead;
 import org.gradoop.common.model.impl.pojo.Vertex;
 import org.gradoop.common.storage.impl.accumulo.AccumuloEPGMStore;
 import org.gradoop.common.util.AsciiGraphLoader;
+import org.gradoop.flink.io.impl.accumulo.AccumuloDataSink;
 import org.gradoop.flink.model.GradoopFlinkTestBase;
+import org.gradoop.flink.util.FlinkAsciiGraphLoader;
+import org.gradoop.flink.util.GradoopFlinkConfig;
 
+import javax.annotation.Nonnull;
+import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Random;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 
 public class AccumuloStoreTestBase extends GradoopFlinkTestBase {
 
@@ -38,7 +49,7 @@ public class AccumuloStoreTestBase extends GradoopFlinkTestBase {
    * @param context loader context
    * @throws Throwable if error
    */
-  protected void doTest(
+  protected void storeImportAndTest(
     String namespace,
     SocialTestContext context
   ) throws Throwable {
@@ -46,7 +57,7 @@ public class AccumuloStoreTestBase extends GradoopFlinkTestBase {
       .getAcConfig(getExecutionEnvironment(), namespace);
     AccumuloEPGMStore graphStore = new AccumuloEPGMStore(config);
 
-    //read vertices by label
+    // read vertices by label
     AsciiGraphLoader<GraphHead, Vertex, Edge> loader = GradoopTestUtils.getSocialNetworkLoader();
     // write social graph to Accumulo
     for (GraphHead g : loader.getGraphHeads()) {
@@ -61,6 +72,40 @@ public class AccumuloStoreTestBase extends GradoopFlinkTestBase {
     graphStore.flush();
 
     context.test(loader, graphStore);
+  }
+
+  /**
+   * Load social network graph and write it into accumulo graph
+   *
+   * @param namespace store namespace
+   * @param context loader context
+   * @throws Throwable if error
+   */
+  protected void sinkImportAndTest(
+    String namespace,
+    FlinkSocialTestContext context
+  ) throws Throwable {
+    AccumuloEPGMStore accumuloStore = new AccumuloEPGMStore(AccumuloTestSuite
+      .getAcConfig(getExecutionEnvironment(), namespace));
+
+    FlinkAsciiGraphLoader loader = new FlinkAsciiGraphLoader(
+      GradoopFlinkConfig.createConfig(getExecutionEnvironment()));
+
+    InputStream inputStream = getClass().getResourceAsStream(
+      GradoopTestUtils.SOCIAL_NETWORK_GDL_FILE);
+
+    loader.initDatabaseFromStream(inputStream);
+    new AccumuloDataSink(accumuloStore).write(accumuloStore
+      .getConfig()
+      .getGraphCollectionFactory()
+      .fromCollections(
+        loader.getGraphHeads(),
+        loader.getVertices(),
+        loader.getEdges()));
+    getExecutionEnvironment().execute();
+    accumuloStore.flush();
+
+    context.test(loader, accumuloStore);
   }
 
   /**
@@ -100,6 +145,15 @@ public class AccumuloStoreTestBase extends GradoopFlinkTestBase {
 
     void test(
       AsciiGraphLoader<GraphHead, Vertex, Edge> loader,
+      AccumuloEPGMStore store
+    ) throws Throwable;
+
+  }
+
+  public interface FlinkSocialTestContext {
+
+    void test(
+      FlinkAsciiGraphLoader loader,
       AccumuloEPGMStore store
     ) throws Throwable;
 

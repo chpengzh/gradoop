@@ -20,13 +20,8 @@ import com.google.common.collect.Lists;
 import org.apache.accumulo.core.client.AccumuloException;
 import org.apache.accumulo.core.client.AccumuloSecurityException;
 import org.apache.accumulo.core.client.BatchScanner;
-import org.apache.accumulo.core.client.ClientConfiguration;
 import org.apache.accumulo.core.client.Connector;
 import org.apache.accumulo.core.client.TableNotFoundException;
-import org.apache.accumulo.core.client.ZooKeeperInstance;
-import org.apache.accumulo.core.client.mapred.AccumuloRowInputFormat;
-import org.apache.accumulo.core.client.mapred.RangeInputSplit;
-import org.apache.accumulo.core.client.security.tokens.PasswordToken;
 import org.apache.accumulo.core.data.Key;
 import org.apache.accumulo.core.data.Range;
 import org.apache.accumulo.core.data.Value;
@@ -34,15 +29,12 @@ import org.apache.accumulo.core.security.Authorizations;
 import org.apache.flink.api.common.io.GenericInputFormat;
 import org.apache.flink.api.common.io.InputFormat;
 import org.apache.flink.core.io.GenericInputSplit;
-import org.apache.hadoop.mapred.InputSplit;
-import org.apache.hadoop.mapred.JobConf;
-import org.gradoop.common.config.GradoopAccumuloConfig;
 import org.gradoop.common.model.impl.pojo.Element;
-import org.gradoop.common.storage.impl.accumulo.constants.AccumuloDefault;
 import org.gradoop.common.storage.impl.accumulo.constants.AccumuloTables;
+import org.gradoop.common.storage.impl.accumulo.constants.GradoopAccumuloProperty;
 import org.gradoop.common.storage.impl.accumulo.predicate.query.AccumuloQueryHolder;
+import org.gradoop.utils.GradoopAccumuloUtils;
 
-import javax.annotation.Nonnull;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -50,8 +42,6 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 /**
  * Common Abstract {@link InputFormat} for gradoop accumulo store
@@ -138,36 +128,25 @@ public abstract class BaseInputFormat<T extends Element> extends GenericInputFor
   public void open(GenericInputSplit split) throws IOException {
     super.open(split);
     try {
-      String user = (String) properties
-        .getOrDefault(GradoopAccumuloConfig.ACCUMULO_USER, AccumuloDefault.USER);
-      String password = (String) properties
-        .getOrDefault(GradoopAccumuloConfig.ACCUMULO_PASSWD, AccumuloDefault.PASSWORD);
-      String instance = (String) properties
-        .getOrDefault(GradoopAccumuloConfig.ACCUMULO_INSTANCE, AccumuloDefault.INSTANCE);
-      String zkHosts = (String) properties
-        .getOrDefault(GradoopAccumuloConfig.ZOOKEEPER_HOSTS, AccumuloDefault.INSTANCE);
-      String tableName = getTableName((String) properties
-        .getOrDefault(GradoopAccumuloConfig.ACCUMULO_TABLE_PREFIX, AccumuloDefault.TABLE_PREFIX));
-      Authorizations auth = (Authorizations) properties
-        .getOrDefault(GradoopAccumuloConfig.ACCUMULO_AUTHORIZATIONS,
-          AccumuloDefault.AUTHORIZATION);
-      int batchSize = (int) properties
-        .getOrDefault(GradoopAccumuloConfig.GRADOOP_BATCH_SCANNER_THREADS,
-          AccumuloDefault.BATCH_SCANNER_THREADS);
-      int iteratorPriority = (int) properties
-        .getOrDefault(GradoopAccumuloConfig.GRADOOP_ITERATOR_PRIORITY,
-          AccumuloDefault.ITERATOR_PRIORITY);
+      String user = GradoopAccumuloProperty.ACCUMULO_USER.get(properties);
+      String password = GradoopAccumuloProperty.ACCUMULO_PASSWD.get(properties);
+      String instance = GradoopAccumuloProperty.ACCUMULO_INSTANCE.get(properties);
+      String zkHosts = GradoopAccumuloProperty.ZOOKEEPER_HOSTS.get(properties);
+      String tableName = getTableName(
+        GradoopAccumuloProperty.ACCUMULO_TABLE_PREFIX.get(properties));
+      Authorizations auth = GradoopAccumuloProperty.ACCUMULO_AUTHORIZATIONS.get(properties);
+      int batchSize = GradoopAccumuloProperty.GRADOOP_BATCH_SCANNER_THREADS.get(properties);
+      int iteratorPriority = GradoopAccumuloProperty.GRADOOP_ITERATOR_PRIORITY.get(properties);
 
-      Connector conn = new ZooKeeperInstance(instance, zkHosts)
-        .getConnector(user, new PasswordToken(password));
-
-      List<Range> ranges = doSplits(
+      Connector conn = GradoopAccumuloUtils.createConnector(properties);
+      List<Range> ranges = GradoopAccumuloUtils.getSplits(
         split.getTotalNumberOfSplits(),
         tableName,
         user,
         password,
         instance,
         zkHosts,
+        predicate == null ? null : predicate.getQueryRanges(),
         auth);
 
       Map<String, String> options = new HashMap<>();
@@ -206,46 +185,6 @@ public abstract class BaseInputFormat<T extends Element> extends GenericInputFor
     if (scanner != null) {
       scanner.close();
     }
-  }
-
-  /**
-   * Split table into ranges according to {@link AccumuloRowInputFormat#getSplits} suggest
-   *
-   * @param maxSplit max split size
-   * @param tableName split table name
-   * @param user accumulo user
-   * @param password accumulo password
-   * @param instance accumulo instance name
-   * @param zkHosts zookeeper hosts
-   * @param auth accumulo access authorization
-   * @return split range collections
-   */
-  @Nonnull
-  private List<Range> doSplits(
-    int maxSplit,
-    @Nonnull String tableName,
-    @Nonnull String user,
-    @Nonnull String password,
-    @Nonnull String instance,
-    @Nonnull String zkHosts,
-    @Nonnull Authorizations auth
-  ) throws IOException, AccumuloSecurityException {
-    AccumuloRowInputFormat format = new AccumuloRowInputFormat();
-    JobConf conf = new JobConf();
-    AccumuloRowInputFormat.setInputTableName(conf, tableName);
-    AccumuloRowInputFormat.setConnectorInfo(conf, user, new PasswordToken(password));
-    AccumuloRowInputFormat.setZooKeeperInstance(conf, ClientConfiguration.create()
-      .withInstance(instance)
-      .withZkHosts(zkHosts));
-    AccumuloRowInputFormat.setScanAuthorizations(conf, auth);
-    if (predicate != null && predicate.getQueryRanges() != null) {
-      AccumuloRowInputFormat.setRanges(conf, predicate.getQueryRanges());
-    }
-    InputSplit[] splits = format.getSplits(conf, maxSplit);
-    return Stream.of(splits)
-      .map(it -> (RangeInputSplit) it)
-      .map(RangeInputSplit::getRange)
-      .collect(Collectors.toList());
   }
 
 }

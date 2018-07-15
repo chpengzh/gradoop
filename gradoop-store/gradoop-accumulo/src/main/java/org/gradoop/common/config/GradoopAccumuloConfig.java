@@ -15,66 +15,28 @@
  */
 package org.gradoop.common.config;
 
-import org.apache.accumulo.core.security.Authorizations;
 import org.apache.flink.api.java.ExecutionEnvironment;
 import org.gradoop.common.model.impl.pojo.EdgeFactory;
 import org.gradoop.common.model.impl.pojo.GraphHeadFactory;
 import org.gradoop.common.model.impl.pojo.VertexFactory;
 import org.gradoop.common.storage.config.GradoopStoreConfig;
-import org.gradoop.common.storage.impl.accumulo.constants.AccumuloDefault;
 import org.gradoop.common.storage.impl.accumulo.constants.AccumuloTables;
+import org.gradoop.common.storage.impl.accumulo.constants.GradoopAccumuloProperty;
+import org.gradoop.common.storage.impl.accumulo.handler.AccumuloAdjacencyHandler;
 import org.gradoop.common.storage.impl.accumulo.handler.AccumuloEdgeHandler;
 import org.gradoop.common.storage.impl.accumulo.handler.AccumuloGraphHandler;
 import org.gradoop.common.storage.impl.accumulo.handler.AccumuloVertexHandler;
 
 import javax.annotation.Nonnull;
 import java.util.Properties;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * Gradoop Accumulo configuration define
  */
 public class GradoopAccumuloConfig extends
   GradoopStoreConfig<GraphHeadFactory, VertexFactory, EdgeFactory> {
-
-  /**
-   * accumulo user for accumulo connector, default "root"
-   */
-  public static final String ACCUMULO_USER = "accumulo.user";
-
-  /**
-   * accumulo password for accumulo connector, default empty
-   */
-  public static final String ACCUMULO_PASSWD = "accumulo.password";
-
-  /**
-   * accumulo instance name, default "gradoop"
-   */
-  public static final String ACCUMULO_INSTANCE = "accumulo.instance";
-
-  /**
-   * accumulo authorizations, default {@link Authorizations#EMPTY}
-   */
-  public static final String ACCUMULO_AUTHORIZATIONS = "accumulo.authorizations";
-
-  /**
-   * accumulo table prefix, you can define namespace and store prefix here
-   */
-  public static final String ACCUMULO_TABLE_PREFIX = "accumulo.table.prefix";
-
-  /**
-   * gradoop accumulo iterator priority, default 0xf
-   */
-  public static final String GRADOOP_ITERATOR_PRIORITY = "gradoop.iterator.priority";
-
-  /**
-   * gradoop batch scanner threads, default 10
-   */
-  public static final String GRADOOP_BATCH_SCANNER_THREADS = "gradoop.batch.scanner.threads";
-
-  /**
-   * zookeeper hosts, default "localhost:2181"
-   */
-  public static final String ZOOKEEPER_HOSTS = "zookeeper.hosts";
 
   /**
    * define for serialize version control
@@ -102,23 +64,31 @@ public class GradoopAccumuloConfig extends
   private transient AccumuloEdgeHandler edgeHandler;
 
   /**
+   * Row handler for adjacency
+   */
+  private transient AccumuloAdjacencyHandler adjacencyHandler;
+
+  /**
    * Creates a new Configuration.
    *
    * @param graphHandler                graph head handler
    * @param vertexHandler               vertex handler
    * @param edgeHandler                 edge handler
+   * @param adjacencyHandler            adjacent handler
    * @param env                         flink execution environment
    */
   private GradoopAccumuloConfig(
     AccumuloGraphHandler graphHandler,
     AccumuloVertexHandler vertexHandler,
     AccumuloEdgeHandler edgeHandler,
+    AccumuloAdjacencyHandler adjacencyHandler,
     ExecutionEnvironment env
   ) {
     super(new GraphHeadFactory(), new VertexFactory(), new EdgeFactory(), env);
     this.graphHandler = graphHandler;
     this.vertexHandler = vertexHandler;
     this.edgeHandler = edgeHandler;
+    this.adjacencyHandler = adjacencyHandler;
   }
 
   /**
@@ -127,7 +97,10 @@ public class GradoopAccumuloConfig extends
    * @param config Gradoop configuration
    */
   private GradoopAccumuloConfig(GradoopAccumuloConfig config) {
-    this(config.graphHandler, config.vertexHandler, config.edgeHandler,
+    this(config.graphHandler,
+      config.vertexHandler,
+      config.edgeHandler,
+      config.adjacencyHandler,
       config.getExecutionEnvironment());
     this.accumuloProperties.putAll(config.accumuloProperties);
   }
@@ -149,6 +122,7 @@ public class GradoopAccumuloConfig extends
       new AccumuloGraphHandler(graphHeadFactory),
       new AccumuloVertexHandler(vertexFactory),
       new AccumuloEdgeHandler(edgeFactory),
+      new AccumuloAdjacencyHandler(),
       env);
   }
 
@@ -170,10 +144,10 @@ public class GradoopAccumuloConfig extends
    * @return configure itself
    */
   public GradoopAccumuloConfig set(
-    String key,
+    GradoopAccumuloProperty key,
     Object value
   ) {
-    accumuloProperties.put(key, value);
+    accumuloProperties.put(key.getKey(), value);
     return this;
   }
 
@@ -214,13 +188,19 @@ public class GradoopAccumuloConfig extends
     return edgeHandler;
   }
 
+  public AccumuloAdjacencyHandler getAdjacencyHandler() {
+    return adjacencyHandler;
+  }
+
   /**
    * Get edge table name
    *
    * @return edge table name
    */
   public String getEdgeTable() {
-    return get(ACCUMULO_TABLE_PREFIX, AccumuloDefault.TABLE_PREFIX) + AccumuloTables.EDGE;
+    return String.format("%s%s",
+      GradoopAccumuloProperty.ACCUMULO_TABLE_PREFIX.get(accumuloProperties),
+      AccumuloTables.EDGE);
   }
 
   /**
@@ -229,7 +209,9 @@ public class GradoopAccumuloConfig extends
    * @return vertex table name
    */
   public String getVertexTable() {
-    return get(ACCUMULO_TABLE_PREFIX, AccumuloDefault.TABLE_PREFIX) + AccumuloTables.VERTEX;
+    return String.format("%s%s",
+      GradoopAccumuloProperty.ACCUMULO_TABLE_PREFIX.get(accumuloProperties),
+      AccumuloTables.VERTEX);
   }
 
   /**
@@ -238,12 +220,29 @@ public class GradoopAccumuloConfig extends
    * @return graph head table name
    */
   public String getGraphHeadTable() {
-    return get(ACCUMULO_TABLE_PREFIX, AccumuloDefault.TABLE_PREFIX) + AccumuloTables.GRAPH;
+    return String.format("%s%s",
+      GradoopAccumuloProperty.ACCUMULO_TABLE_PREFIX.get(accumuloProperties),
+      AccumuloTables.GRAPH);
+  }
+
+  /**
+   * Get adjacency table name
+   *
+   * @return graph head table name
+   */
+  public String getAdjacencyTable() {
+    return String.format("%s%s",
+      GradoopAccumuloProperty.ACCUMULO_TABLE_PREFIX.get(accumuloProperties),
+      AccumuloTables.ADJACENCY);
   }
 
   @Override
   public String toString() {
-    return accumuloProperties.toString();
+    return Stream.of(GradoopAccumuloProperty.values())
+      .collect(Collectors.toMap(
+        GradoopAccumuloProperty::getKey,
+        it -> it.get(accumuloProperties)))
+      .toString();
   }
 
 }

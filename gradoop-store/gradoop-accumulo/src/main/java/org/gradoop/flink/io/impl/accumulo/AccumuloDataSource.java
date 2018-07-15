@@ -16,14 +16,27 @@
 
 package org.gradoop.flink.io.impl.accumulo;
 
+import org.apache.accumulo.core.client.BatchScanner;
+import org.apache.accumulo.core.client.Connector;
+import org.apache.accumulo.core.data.Range;
+import org.apache.accumulo.core.security.Authorizations;
+import org.apache.flink.api.common.functions.MapPartitionFunction;
+import org.apache.flink.api.common.typeinfo.TypeHint;
+import org.apache.flink.api.java.DataSet;
 import org.apache.flink.api.java.ExecutionEnvironment;
+import org.gradoop.common.model.impl.AdjacencyRow;
+import org.gradoop.common.model.impl.id.GradoopId;
 import org.gradoop.common.model.impl.pojo.Edge;
 import org.gradoop.common.model.impl.pojo.GraphHead;
 import org.gradoop.common.model.impl.pojo.Vertex;
 import org.gradoop.common.storage.impl.accumulo.AccumuloEPGMStore;
-import org.gradoop.common.storage.impl.accumulo.predicate.query.AccumuloQueryHolder;
+import org.gradoop.common.storage.impl.accumulo.constants.AccumuloTables;
+import org.gradoop.common.storage.impl.accumulo.constants.GradoopAccumuloProperty;
+import org.gradoop.common.storage.impl.accumulo.handler.AccumuloAdjacencyHandler;
 import org.gradoop.common.storage.impl.accumulo.predicate.filter.api.AccumuloElementFilter;
+import org.gradoop.common.storage.impl.accumulo.predicate.query.AccumuloQueryHolder;
 import org.gradoop.common.storage.predicate.query.ElementQuery;
+import org.gradoop.flink.io.api.AdjacentIndexedDataSource;
 import org.gradoop.flink.io.api.FilterableDataSource;
 import org.gradoop.flink.io.impl.accumulo.inputformats.EdgeInputFormat;
 import org.gradoop.flink.io.impl.accumulo.inputformats.GraphHeadInputFormat;
@@ -32,17 +45,23 @@ import org.gradoop.flink.model.api.epgm.GraphCollection;
 import org.gradoop.flink.model.api.epgm.GraphCollectionFactory;
 import org.gradoop.flink.model.api.epgm.LogicalGraph;
 import org.gradoop.flink.model.impl.operators.combination.ReduceCombination;
+import org.gradoop.utils.GradoopAccumuloUtils;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Properties;
 
 /**
  * Read logic graph or graph collection from accumulo store
  */
-public class AccumuloDataSource extends AccumuloBase implements FilterableDataSource<
-  ElementQuery<AccumuloElementFilter<GraphHead>>,
-  ElementQuery<AccumuloElementFilter<Vertex>>,
-  ElementQuery<AccumuloElementFilter<Edge>>> {
+public class AccumuloDataSource extends AccumuloBase implements
+  FilterableDataSource<
+    ElementQuery<AccumuloElementFilter<GraphHead>>,
+    ElementQuery<AccumuloElementFilter<Vertex>>,
+    ElementQuery<AccumuloElementFilter<Edge>>>,
+  AdjacentIndexedDataSource {
 
   /**
    * graph head filter
@@ -150,6 +169,86 @@ public class AccumuloDataSource extends AccumuloBase implements FilterableDataSo
       vertexQuery,
       newEdgeQuery
     );
+  }
+
+  @Nonnull
+  @Override
+  public DataSet<AdjacencyRow> adjacentFromVertices(
+    @Nonnull DataSet<GradoopId> vertexSeeds,
+    boolean fetchEdgeIn,
+    boolean fetchEdgeOut
+  ) {
+    if (!fetchEdgeIn && !fetchEdgeOut) {
+      throw new IllegalArgumentException("At least one range should be chosen(edge-in/edge-out)");
+    }
+
+    final Properties properties = getStore().getConfig().getAccumuloProperties();
+    final String tableName = getStore().getAdjacencyTableName();
+    final Authorizations auth = GradoopAccumuloProperty.ACCUMULO_AUTHORIZATIONS.get(properties);
+    final int batchSize = GradoopAccumuloProperty.GRADOOP_BATCH_SCANNER_THREADS.get(properties);
+
+    return vertexSeeds
+      .mapPartition((MapPartitionFunction<GradoopId, AdjacencyRow>) (ids, out) -> {
+        AccumuloAdjacencyHandler handler = new AccumuloAdjacencyHandler();
+        Connector conn = GradoopAccumuloUtils.createConnector(properties);
+        try (BatchScanner scanner = conn.createBatchScanner(tableName, auth, batchSize)) {
+          List<Range> scanRanges = new ArrayList<>();
+          for (GradoopId id : ids) {
+            if (fetchEdgeIn) {
+              scanRanges.add(Range.exact(id.toString(), AccumuloTables.KEY.EDGE_IN));
+            }
+            if (fetchEdgeOut) {
+              scanRanges.add(Range.exact(id.toString(), AccumuloTables.KEY.EDGE_OUT));
+            }
+          }
+          if (scanRanges.isEmpty()) {
+            return;
+          }
+          scanner.setRanges(Range.mergeOverlapping(scanRanges));
+          scanner.forEach(it -> out.collect(handler.readAdjacentFromVertex(it)));
+        }
+      }).returns(new TypeHint<AdjacencyRow>() {
+      });
+  }
+
+  @Nonnull
+  @Override
+  public DataSet<AdjacencyRow> adjacentFromEdges(
+    @Nonnull DataSet<GradoopId> edgeSeeds,
+    boolean fetchEdgeSource,
+    boolean fetchEdgeTarget
+  ) {
+    if (!fetchEdgeSource && !fetchEdgeTarget) {
+      throw new IllegalArgumentException("At least one range should be chosen(source/target)");
+    }
+
+    final Properties properties = getStore().getConfig().getAccumuloProperties();
+    final String tableName = getStore().getEdgeTableName();
+    final Authorizations auth = GradoopAccumuloProperty.ACCUMULO_AUTHORIZATIONS.get(properties);
+    final int batchSize = GradoopAccumuloProperty.GRADOOP_BATCH_SCANNER_THREADS.get(properties);
+
+    return edgeSeeds
+      .mapPartition((MapPartitionFunction<GradoopId, AdjacencyRow>) (ids, out) -> {
+        AccumuloAdjacencyHandler handler = new AccumuloAdjacencyHandler();
+        Connector conn = GradoopAccumuloUtils.createConnector(properties);
+        try (BatchScanner scanner = conn.createBatchScanner(tableName, auth, batchSize)) {
+          List<Range> scanRanges = new ArrayList<>();
+          for (GradoopId id : ids) {
+            if (fetchEdgeSource) {
+              scanRanges.add(Range.exact(id.toString(), AccumuloTables.KEY.SOURCE));
+            }
+            if (fetchEdgeTarget) {
+              scanRanges.add(Range.exact(id.toString(), AccumuloTables.KEY.TARGET));
+            }
+          }
+          if (scanRanges.isEmpty()) {
+            return;
+          }
+          scanner.setRanges(Range.mergeOverlapping(scanRanges));
+          scanner.forEach(it -> out.collect(handler.readAdjacentFromEdge(it)));
+        }
+      }).returns(new TypeHint<AdjacencyRow>() {
+      });
   }
 
   @Override

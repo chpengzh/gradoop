@@ -28,28 +28,31 @@ import org.apache.accumulo.core.client.MutationsRejectedException;
 import org.apache.accumulo.core.client.NamespaceExistsException;
 import org.apache.accumulo.core.client.TableExistsException;
 import org.apache.accumulo.core.client.TableNotFoundException;
-import org.apache.accumulo.core.client.ZooKeeperInstance;
-import org.apache.accumulo.core.client.security.tokens.PasswordToken;
 import org.apache.accumulo.core.data.Key;
 import org.apache.accumulo.core.data.Mutation;
 import org.apache.accumulo.core.data.Range;
 import org.apache.accumulo.core.data.Value;
 import org.apache.accumulo.core.iterators.SortedKeyValueIterator;
+import org.apache.accumulo.core.security.Authorizations;
 import org.gradoop.common.config.GradoopAccumuloConfig;
+import org.gradoop.common.model.api.entites.EPGMAdjacencyRow;
 import org.gradoop.common.model.api.entities.EPGMEdge;
 import org.gradoop.common.model.api.entities.EPGMElement;
 import org.gradoop.common.model.api.entities.EPGMGraphHead;
 import org.gradoop.common.model.api.entities.EPGMVertex;
+import org.gradoop.common.model.impl.AdjacencyRow;
 import org.gradoop.common.model.impl.id.GradoopId;
+import org.gradoop.common.model.impl.id.GradoopIdSet;
 import org.gradoop.common.model.impl.pojo.Edge;
 import org.gradoop.common.model.impl.pojo.GraphHead;
 import org.gradoop.common.model.impl.pojo.Vertex;
 import org.gradoop.common.storage.api.EPGMConfigProvider;
 import org.gradoop.common.storage.api.EPGMGraphInput;
 import org.gradoop.common.storage.api.EPGMGraphPredictableOutput;
-import org.gradoop.common.storage.impl.accumulo.constants.AccumuloDefault;
 import org.gradoop.common.storage.impl.accumulo.constants.AccumuloTables;
+import org.gradoop.common.storage.impl.accumulo.constants.GradoopAccumuloProperty;
 import org.gradoop.common.storage.impl.accumulo.handler.AccumuloRowHandler;
+import org.gradoop.common.storage.impl.accumulo.iterator.client.AdjacencyIterator;
 import org.gradoop.common.storage.impl.accumulo.iterator.client.ClientClosableIterator;
 import org.gradoop.common.storage.impl.accumulo.iterator.tserver.GradoopEdgeIterator;
 import org.gradoop.common.storage.impl.accumulo.iterator.tserver.GradoopGraphHeadIterator;
@@ -59,21 +62,25 @@ import org.gradoop.common.storage.iterator.ClosableIterator;
 import org.gradoop.common.storage.iterator.EmptyClosableIterator;
 import org.gradoop.common.storage.predicate.query.ElementQuery;
 import org.gradoop.common.storage.predicate.query.Query;
+import org.gradoop.utils.GradoopAccumuloUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.stream.Collectors;
 
 /**
  * Default Accumulo EPGM graph store that handles reading and writing vertices and
  * graphs from and to Accumulo, It is designed thread-safe.
- * Store contains instances are divided by {@link GradoopAccumuloConfig#ACCUMULO_TABLE_PREFIX}
+ * Store contains instances are divided by {@link GradoopAccumuloProperty#ACCUMULO_TABLE_PREFIX}
  *
  * @see EPGMGraphPredictableOutput
  */
@@ -86,37 +93,42 @@ public class AccumuloEPGMStore implements
     AccumuloElementFilter<Edge>> {
 
   /**
-   * accumulo epgm store logger
+   * Accumulo epgm store logger
    */
   private static final Logger LOG = LoggerFactory.getLogger(AccumuloEPGMStore.class);
 
   /**
-   * gradoop accumulo configuration
+   * Gradoop accumulo configuration
    */
   private final GradoopAccumuloConfig config;
 
   /**
-   * accumulo client connector
+   * Accumulo client connector
    */
   private final Connector conn;
 
   /**
-   * batch writer for epgm graph head table
+   * Batch writer for epgm graph head table
    */
   private final BatchWriter graphWriter;
 
   /**
-   * batch writer for epgm vertex table
+   * Batch writer for epgm vertex table
    */
   private final BatchWriter vertexWriter;
 
   /**
-   * batch writer for epgm edge table
+   * Batch writer for epgm edge table
    */
   private final BatchWriter edgeWriter;
 
   /**
-   * auto flush flag, default false
+   * Batch writer for epgm adjacency table
+   */
+  private final BatchWriter adjacencyWriter;
+
+  /**
+   * Auto flush flag, default false
    */
   private volatile boolean autoFlush;
 
@@ -140,6 +152,7 @@ public class AccumuloEPGMStore implements
       graphWriter = conn.createBatchWriter(getGraphHeadName(), new BatchWriterConfig());
       vertexWriter = conn.createBatchWriter(getVertexTableName(), new BatchWriterConfig());
       edgeWriter = conn.createBatchWriter(getEdgeTableName(), new BatchWriterConfig());
+      adjacencyWriter = conn.createBatchWriter(getAdjacencyTableName(), new BatchWriterConfig());
     } catch (TableNotFoundException e) {
       throw new IllegalStateException(e); //should not be here
     }
@@ -156,14 +169,7 @@ public class AccumuloEPGMStore implements
    * @throws AccumuloException          generic Accumulo Exception for general accumulo failures.
    */
   public Connector createConnector() throws AccumuloSecurityException, AccumuloException {
-    return new ZooKeeperInstance(
-      /*instannce*/config.get(GradoopAccumuloConfig.ACCUMULO_INSTANCE, AccumuloDefault.INSTANCE),
-      /*zookeepers*/config.get(GradoopAccumuloConfig.ZOOKEEPER_HOSTS, AccumuloDefault.ZOOKEEPERS)
-    ).getConnector(
-      /*user*/config.get(GradoopAccumuloConfig.ACCUMULO_USER, AccumuloDefault.USER),
-      /*password*/
-      new PasswordToken(config.get(GradoopAccumuloConfig.ACCUMULO_PASSWD, AccumuloDefault
-        .PASSWORD)));
+    return GradoopAccumuloUtils.createConnector(getConfig().getAccumuloProperties());
   }
 
   @Override
@@ -187,6 +193,11 @@ public class AccumuloEPGMStore implements
   }
 
   @Override
+  public String getAdjacencyTableName() {
+    return config.getAdjacencyTable();
+  }
+
+  @Override
   public void writeGraphHead(@Nonnull EPGMGraphHead record) {
     writeRecord(record, graphWriter, config.getGraphHandler());
   }
@@ -199,9 +210,8 @@ public class AccumuloEPGMStore implements
   @Override
   public void writeEdge(@Nonnull EPGMEdge record) {
     writeRecord(record, edgeWriter, config.getEdgeHandler());
-    // TODO: [#833] add Edge-in and edge-out
-    //writeEdgeOut(record);
-    //writeEdgeIn(record);
+    writeEdgeOut(record);
+    writeEdgeIn(record);
   }
 
   @Override
@@ -215,6 +225,7 @@ public class AccumuloEPGMStore implements
       graphWriter.flush();
       vertexWriter.flush();
       edgeWriter.flush();
+      adjacencyWriter.flush();
     } catch (MutationsRejectedException e) {
       throw new RuntimeException(e);
     }
@@ -226,6 +237,7 @@ public class AccumuloEPGMStore implements
       graphWriter.close();
       vertexWriter.close();
       edgeWriter.close();
+      adjacencyWriter.close();
     } catch (MutationsRejectedException e) {
       throw new RuntimeException(e);
     }
@@ -360,6 +372,77 @@ public class AccumuloEPGMStore implements
     }
   }
 
+  @Nonnull
+  @Override
+  public ClosableIterator<AdjacencyRow> adjacentFromVertices(
+    @Nonnull GradoopIdSet vertexSeeds,
+    boolean fetchEdgeIn,
+    boolean fetchEdgeOut
+  ) {
+    if (vertexSeeds.isEmpty()) {
+      return new EmptyClosableIterator<>();
+    }
+
+    Authorizations auth = GradoopAccumuloProperty.ACCUMULO_AUTHORIZATIONS
+      .get(getConfig().getAccumuloProperties());
+    int batchSize = GradoopAccumuloProperty.GRADOOP_BATCH_SCANNER_THREADS
+      .get(getConfig().getAccumuloProperties());
+    try {
+      BatchScanner scanner = conn.createBatchScanner(getAdjacencyTableName(), auth, batchSize);
+      List<Range> scanRanges = new ArrayList<>();
+      for (GradoopId id : vertexSeeds) {
+        if (fetchEdgeOut) {
+          scanRanges.add(Range.exact(id.toString(), AccumuloTables.KEY.EDGE_OUT));
+        }
+        if (fetchEdgeIn) {
+          scanRanges.add(Range.exact(id.toString(), AccumuloTables.KEY.EDGE_IN));
+        }
+      }
+      scanner.setRanges(Range.mergeOverlapping(scanRanges));
+      return new AdjacencyIterator(scanner,
+        getConfig().getAdjacencyHandler(),
+        EPGMAdjacencyRow.Strategy.FROM_VERTEX_TO_EDGE,
+        batchSize);
+    } catch (TableNotFoundException e) {
+      throw new RuntimeException(e);
+    }
+  }
+
+  @Nonnull
+  @Override
+  public ClosableIterator<AdjacencyRow> adjacentFromEdges(
+    @Nonnull GradoopIdSet edgeSeeds,
+    boolean fetchEdgeSource,
+    boolean fetchEdgeTarget
+  ) {
+    if (edgeSeeds.isEmpty()) {
+      return new EmptyClosableIterator<>();
+    }
+
+    final Properties properties = getConfig().getAccumuloProperties();
+    Authorizations auth = GradoopAccumuloProperty.ACCUMULO_AUTHORIZATIONS.get(properties);
+    int batchSize = GradoopAccumuloProperty.GRADOOP_BATCH_SCANNER_THREADS.get(properties);
+    try {
+      BatchScanner scanner = conn.createBatchScanner(getEdgeTableName(), auth, batchSize);
+      List<Range> scanRanges = new ArrayList<>();
+      for (GradoopId id : edgeSeeds) {
+        if (fetchEdgeTarget) {
+          scanRanges.add(Range.exact(id.toString(), AccumuloTables.KEY.TARGET));
+        }
+        if (fetchEdgeSource) {
+          scanRanges.add(Range.exact(id.toString(), AccumuloTables.KEY.SOURCE));
+        }
+      }
+      scanner.setRanges(Range.mergeOverlapping(scanRanges));
+      return new AdjacencyIterator(scanner,
+        getConfig().getAdjacencyHandler(),
+        EPGMAdjacencyRow.Strategy.FROM_EDGE_TO_VERTEX,
+        batchSize);
+    } catch (TableNotFoundException e) {
+      throw new RuntimeException(e);
+    }
+  }
+
   /**
    * Write an EPGM Element instance into table
    *
@@ -407,14 +490,13 @@ public class AccumuloEPGMStore implements
     }
     BatchScanner scanner;
     try {
-      scanner = conn.createBatchScanner(table,
-        config.get(GradoopAccumuloConfig.ACCUMULO_AUTHORIZATIONS,
-          AccumuloDefault.AUTHORIZATION),
-        config.get(GradoopAccumuloConfig.GRADOOP_BATCH_SCANNER_THREADS,
-          AccumuloDefault.BATCH_SCANNER_THREADS));
-      int priority =
-        config.get(GradoopAccumuloConfig.GRADOOP_ITERATOR_PRIORITY, AccumuloDefault
-          .ITERATOR_PRIORITY);
+      Authorizations auth = GradoopAccumuloProperty.ACCUMULO_AUTHORIZATIONS
+        .get(getConfig().getAccumuloProperties());
+      int batchSize = GradoopAccumuloProperty.GRADOOP_BATCH_SCANNER_THREADS
+        .get(getConfig().getAccumuloProperties());
+      int priority = GradoopAccumuloProperty.GRADOOP_ITERATOR_PRIORITY
+        .get(getConfig().getAccumuloProperties());
+      scanner = conn.createBatchScanner(table, auth, batchSize);
       scanner.addScanIterator(new IteratorSetting(
         /*iterator priority*/priority,
         /*iterator class*/iterator,
@@ -447,8 +529,9 @@ public class AccumuloEPGMStore implements
    * @throws AccumuloException          generic Accumulo Exception for general accumulo failures.
    */
   private void createTablesIfNotExists() throws AccumuloSecurityException, AccumuloException {
-    String prefix =
-      config.get(GradoopAccumuloConfig.ACCUMULO_TABLE_PREFIX, AccumuloDefault.TABLE_PREFIX);
+    String prefix = GradoopAccumuloProperty.ACCUMULO_TABLE_PREFIX
+      .get(getConfig().getAccumuloProperties());
+
     if (prefix.contains(".")) {
       String namespace = prefix.substring(0, prefix.indexOf("."));
       try {
@@ -460,7 +543,7 @@ public class AccumuloEPGMStore implements
       }
     }
     for (String table : new String[] {
-      getVertexTableName(), getEdgeTableName(), getGraphHeadName()
+      getVertexTableName(), getEdgeTableName(), getGraphHeadName(), getAdjacencyTableName()
     }) {
       try {
         if (!conn.tableOperations().exists(table)) {
@@ -473,34 +556,30 @@ public class AccumuloEPGMStore implements
   }
 
   /**
-   * Write an edge-out link record into vertex table
+   * Write an edge-in link record into vertex table
    *
    * @param record epgm edge record
    */
-  private void writeEdgeOut(EPGMEdge record) {
-    //write out mutation
+  private void writeEdgeIn(EPGMEdge record) {
     try {
-      Mutation mutation = new Mutation(record.getSourceId().toString());
-      mutation = config.getVertexHandler()
-        .writeLink(mutation, record, false);
-      vertexWriter.addMutation(mutation);
+      Mutation mutation = new Mutation(record.getTargetId().toString());
+      mutation = config.getAdjacencyHandler().writeIncomeEdge(mutation, record);
+      adjacencyWriter.addMutation(mutation);
     } catch (MutationsRejectedException e) {
       throw new RuntimeException(e);
     }
   }
 
   /**
-   * Write an edge-in link record into vertex table
+   * Write an edge-out link record into vertex table
    *
    * @param record epgm edge record
    */
-  private void writeEdgeIn(EPGMEdge record) {
-    //write out mutation
+  private void writeEdgeOut(EPGMEdge record) {
     try {
-      Mutation mutation = new Mutation(record.getTargetId().toString());
-      mutation = config.getVertexHandler()
-        .writeLink(mutation, record, true);
-      vertexWriter.addMutation(mutation);
+      Mutation mutation = new Mutation(record.getSourceId().toString());
+      mutation = config.getAdjacencyHandler().writeOutcomeEdge(mutation, record);
+      adjacencyWriter.addMutation(mutation);
     } catch (MutationsRejectedException e) {
       throw new RuntimeException(e);
     }
