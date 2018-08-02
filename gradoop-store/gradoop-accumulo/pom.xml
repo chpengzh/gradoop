@@ -215,6 +215,13 @@
             <scope>test</scope>
         </dependency>
 
+        <dependency>
+            <groupId>org.gradoop</groupId>
+            <artifactId>gradoop-store-api</artifactId>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
+
         <!-- Flink -->
         <!-- needs to be added even though it is already a test dependency of gradoop-flink
              Maven issue has been unresolved for 12(!) years

@@ -36,9 +36,19 @@ public class AccumuloTables {
   public static final String GRAPH = "graph";
 
   /**
+   * gradoop graph head table name
+   */
+  public static final String INCIDENT = "incident";
+
+  /**
    * gradoop predicate options key
    */
   public static final String KEY_PREDICATE = "__filter__";
+
+  /**
+   * Gradoop source row strategy
+   */
+  public static final String KEY_SOURCE_ROW_STRATEGY = "__source_row_strategy__";
 
   /**
    * cf or cq constants key
@@ -53,37 +63,37 @@ public class AccumuloTables {
     /**
      * element label
      */
-    public static final String LABEL = "label";
+    public static final String LABEL = "l";
 
     /**
      * edge source
      */
-    public static final String SOURCE = "source";
+    public static final String SOURCE = "s";
 
     /**
      * edge target
      */
-    public static final String TARGET = "target";
+    public static final String TARGET = "t";
 
     /**
      * element property
      */
-    public static final String PROPERTY = "property";
+    public static final String PROPERTY = "p";
 
     /**
      * graph element belonging
      */
-    public static final String GRAPH = "graph";
+    public static final String GRAPH = "g";
 
     /**
      * graph vertex edge in
      */
-    public static final String EDGE_IN = "edge_in";
+    public static final String EDGE_IN = "ei";
 
     /**
      * graph vertex edge out
      */
-    public static final String EDGE_OUT = "edge_out";
+    public static final String EDGE_OUT = "eo";
   }
 
 }

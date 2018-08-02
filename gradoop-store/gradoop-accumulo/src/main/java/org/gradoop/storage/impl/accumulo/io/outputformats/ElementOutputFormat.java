@@ -94,7 +94,7 @@ public class ElementOutputFormat<E extends Element> implements OutputFormat<E> {
 
 
   @Override
-  public final void writeRecord(E record) {
+  public final void writeRecord(E record) throws IOException {
     if (elementType == Edge.class) {
       this.store.writeEdge((EPGMEdge) record);
     } else if (elementType == Vertex.class) {

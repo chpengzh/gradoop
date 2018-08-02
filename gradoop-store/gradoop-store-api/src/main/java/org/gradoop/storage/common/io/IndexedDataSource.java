@@ -22,6 +22,8 @@ import org.gradoop.common.model.impl.pojo.Edge;
 import org.gradoop.common.model.impl.pojo.GraphHead;
 import org.gradoop.common.model.impl.pojo.Vertex;
 import org.gradoop.flink.io.api.DataSource;
+import org.gradoop.storage.common.model.EdgeSourceRow;
+import org.gradoop.storage.common.model.VertexSourceRow;
 import org.gradoop.storage.common.predicate.filter.api.ElementFilter;
 
 import javax.annotation.Nonnull;
@@ -139,6 +141,54 @@ public interface IndexedDataSource<
   DataSet<Edge> getEdges(
     @Nonnull DataSet<GradoopId> edgeIds,
     @Nullable EFilter filter
+  ) throws IOException;
+
+  /**
+   * Returns all vertex source rows
+   *
+   * @param queryStrategy query strategy, should result rows contain income/outcome edge
+   * @return vertex source row as {vertex_id, edge_id, (income/outcome)}
+   */
+  @Nonnull
+  DataSet<VertexSourceRow> getEdgeIdsFromVertexIds(
+    @Nonnull VertexSourceRow.Strategy queryStrategy
+  ) throws IOException;
+
+  /**
+   * Returns all edge source rows
+   *
+   * @param queryStrategy query strategy, should result rows contain income/outcome edge
+   * @return vertex source row as {vertex_id, edge_id, (income/outcome)}
+   */
+  @Nonnull
+  DataSet<EdgeSourceRow> getVertexIdsFromEdgeIds(
+    @Nonnull EdgeSourceRow.Strategy queryStrategy
+  ) throws IOException;
+
+  /**
+   * Returns a set if vertex source rows that isolate to given vertex seeds
+   *
+   * @param vertexIds vertex seed id set
+   * @param queryStrategy query strategy, should result rows contain income/outcome/both edge
+   * @return vertex source row as {vertex_id, edge_id, (income/outcome)}
+   */
+  @Nonnull
+  DataSet<VertexSourceRow> getEdgeIdsFromVertexIds(
+    @Nonnull DataSet<GradoopId> vertexIds,
+    @Nonnull VertexSourceRow.Strategy queryStrategy
+  ) throws IOException;
+
+  /**
+   * Returns a set if edge source rows that isolate to given edge seeds
+   *
+   * @param edgeIds edge seed id set
+   * @param queryStrategy query strategy, should result rows contain source/target/both vertex
+   * @return edge source row as {edge_id, vertex_id, (source/target)}
+   */
+  @Nonnull
+  DataSet<EdgeSourceRow> getVertexIdsFromEdgeIds(
+    @Nonnull DataSet<GradoopId> edgeIds,
+    @Nonnull EdgeSourceRow.Strategy queryStrategy
   ) throws IOException;
 
 }

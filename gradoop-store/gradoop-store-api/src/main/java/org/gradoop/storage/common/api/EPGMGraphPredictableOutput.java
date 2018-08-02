@@ -15,10 +15,14 @@
  */
 package org.gradoop.storage.common.api;
 
+import org.gradoop.common.model.impl.id.GradoopIdSet;
 import org.gradoop.common.model.impl.pojo.Edge;
 import org.gradoop.common.model.impl.pojo.GraphHead;
 import org.gradoop.common.model.impl.pojo.Vertex;
 import org.gradoop.storage.common.iterator.ClosableIterator;
+import org.gradoop.storage.common.iterator.EmptyClosableIterator;
+import org.gradoop.storage.common.model.EdgeSourceRow;
+import org.gradoop.storage.common.model.VertexSourceRow;
 import org.gradoop.storage.common.predicate.filter.api.ElementFilter;
 import org.gradoop.storage.common.predicate.query.ElementQuery;
 
@@ -135,6 +139,34 @@ public interface EPGMGraphPredictableOutput<
   ClosableIterator<Edge> getEdgeSpace(
     @Nullable ElementQuery<EFilter> query,
     int cacheSize
+  ) throws IOException;
+
+  /**
+   * Returns a set if edge ids that relative to vertex seeds
+   *
+   * @param vertexSeeds vertex seed id set.
+   *                    If empty, an {@link EmptyClosableIterator} will be return
+   * @param strategy query strategy
+   * @return vertex source row
+   */
+  @Nonnull
+  ClosableIterator<VertexSourceRow> getEdgeIdsFromVertexIds(
+    @Nonnull GradoopIdSet vertexSeeds,
+    @Nonnull VertexSourceRow.Strategy strategy
+  ) throws IOException;
+
+  /**
+   * Returns a set if edge ids that relative to vertex seeds
+   *
+   * @param edgeSeeds edge seed id set.
+   *                  If empty, an {@link EmptyClosableIterator} will be return
+   * @param strategy query strategy
+   * @return edge source row
+   */
+  @Nonnull
+  ClosableIterator<EdgeSourceRow> getVertexIdsFromEdgeIds(
+    @Nonnull GradoopIdSet edgeSeeds,
+    @Nonnull EdgeSourceRow.Strategy strategy
   ) throws IOException;
 
 }

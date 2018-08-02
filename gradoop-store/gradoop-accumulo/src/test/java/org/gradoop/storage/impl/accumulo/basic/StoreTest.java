@@ -211,7 +211,8 @@ public class StoreTest extends AccumuloStoreTestBase {
    * Tries to add an unsupported property type {@link Queue} as property value.
    */
   @Test(expected = UnsupportedTypeException.class)
-  public void test04_wrongPropertyTypeTest() throws AccumuloSecurityException, AccumuloException {
+  public void test04_wrongPropertyTypeTest() throws
+    AccumuloSecurityException, AccumuloException, IOException {
     GradoopAccumuloConfig config = AccumuloTestSuite.getAcConfig(TEST04);
     AccumuloEPGMStore graphStore = new AccumuloEPGMStore(config);
 

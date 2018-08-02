@@ -28,6 +28,7 @@ import org.gradoop.common.model.api.entities.EPGMElement;
 import org.gradoop.common.model.api.entities.EPGMGraphHead;
 import org.gradoop.common.model.api.entities.EPGMVertex;
 import org.gradoop.common.model.impl.id.GradoopId;
+import org.gradoop.common.model.impl.id.GradoopIdSet;
 import org.gradoop.common.model.impl.pojo.Edge;
 import org.gradoop.common.model.impl.pojo.GraphHead;
 import org.gradoop.common.model.impl.pojo.Vertex;
@@ -35,6 +36,8 @@ import org.gradoop.storage.common.api.EPGMConfigProvider;
 import org.gradoop.storage.common.api.EPGMGraphInput;
 import org.gradoop.storage.common.api.EPGMGraphPredictableOutput;
 import org.gradoop.storage.common.iterator.ClosableIterator;
+import org.gradoop.storage.common.model.EdgeSourceRow;
+import org.gradoop.storage.common.model.VertexSourceRow;
 import org.gradoop.storage.common.predicate.query.ElementQuery;
 import org.gradoop.storage.config.GradoopHBaseConfig;
 import org.gradoop.storage.impl.hbase.api.EdgeHandler;
@@ -143,6 +146,11 @@ public class HBaseEPGMStore implements
   @Override
   public String getGraphHeadName() {
     return graphHeadTable.getName().getNameAsString();
+  }
+
+  @Override
+  public String getIncidentTableName() {
+    throw new UnsupportedOperationException("not supported yet");
   }
 
   /**
@@ -298,6 +306,24 @@ public class HBaseEPGMStore implements
     }
 
     return new HBaseEdgeIterator(edgeTable.getScanner(scan), config.getEdgeHandler());
+  }
+
+  @Nonnull
+  @Override
+  public ClosableIterator<VertexSourceRow> getEdgeIdsFromVertexIds(
+    @Nonnull GradoopIdSet vertexSeeds,
+    @Nonnull VertexSourceRow.Strategy strategy
+  ) throws IOException {
+    throw new UnsupportedOperationException("not supported yet");
+  }
+
+  @Nonnull
+  @Override
+  public ClosableIterator<EdgeSourceRow> getVertexIdsFromEdgeIds(
+    @Nonnull GradoopIdSet edgeSeeds,
+    @Nonnull EdgeSourceRow.Strategy strategy
+  ) throws IOException {
+    throw new UnsupportedOperationException("not supported yet");
   }
 
   /**

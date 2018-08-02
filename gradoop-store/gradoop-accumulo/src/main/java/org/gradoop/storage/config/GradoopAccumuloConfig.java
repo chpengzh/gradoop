@@ -23,6 +23,7 @@ import org.gradoop.storage.impl.accumulo.constants.AccumuloTables;
 import org.gradoop.storage.impl.accumulo.constants.GradoopAccumuloProperty;
 import org.gradoop.storage.impl.accumulo.handler.AccumuloEdgeHandler;
 import org.gradoop.storage.impl.accumulo.handler.AccumuloGraphHandler;
+import org.gradoop.storage.impl.accumulo.handler.AccumuloIncidentHandler;
 import org.gradoop.storage.impl.accumulo.handler.AccumuloVertexHandler;
 
 import java.util.Properties;
@@ -60,20 +61,28 @@ public class GradoopAccumuloConfig implements GradoopStoreConfig {
   private final AccumuloEdgeHandler edgeHandler;
 
   /**
+   * Row handler for incident
+   */
+  private final AccumuloIncidentHandler incidentHandler;
+
+  /**
    * Creates a new Configuration.
    *
    * @param graphHandler                graph head handler
    * @param vertexHandler               vertex handler
    * @param edgeHandler                 edge handler
+   * @param incidentHandler             incident handler
    */
   private GradoopAccumuloConfig(
     AccumuloGraphHandler graphHandler,
     AccumuloVertexHandler vertexHandler,
-    AccumuloEdgeHandler edgeHandler
+    AccumuloEdgeHandler edgeHandler,
+    AccumuloIncidentHandler incidentHandler
   ) {
     this.graphHandler = graphHandler;
     this.vertexHandler = vertexHandler;
     this.edgeHandler = edgeHandler;
+    this.incidentHandler = incidentHandler;
   }
 
   /**
@@ -89,7 +98,8 @@ public class GradoopAccumuloConfig implements GradoopStoreConfig {
     return new GradoopAccumuloConfig(
       new AccumuloGraphHandler(graphHeadFactory),
       new AccumuloVertexHandler(vertexFactory),
-      new AccumuloEdgeHandler(edgeFactory));
+      new AccumuloEdgeHandler(edgeFactory),
+      new AccumuloIncidentHandler());
   }
 
   /**
@@ -159,6 +169,15 @@ public class GradoopAccumuloConfig implements GradoopStoreConfig {
   }
 
   /**
+   * Get incident handler
+   *
+   * @return incident handler
+   */
+  public AccumuloIncidentHandler getIncidentHandler() {
+    return incidentHandler;
+  }
+
+  /**
    * Get edge table name
    *
    * @return edge table name
@@ -189,6 +208,17 @@ public class GradoopAccumuloConfig implements GradoopStoreConfig {
     return String.format("%s%s",
       GradoopAccumuloProperty.ACCUMULO_TABLE_PREFIX.get(accumuloProperties),
       AccumuloTables.GRAPH);
+  }
+
+  /**
+   * Get incident table name
+   *
+   * @return incident table name
+   */
+  public String getIncidentTable() {
+    return String.format("%s%s",
+      GradoopAccumuloProperty.ACCUMULO_TABLE_PREFIX.get(accumuloProperties),
+      AccumuloTables.INCIDENT);
   }
 
   @Override

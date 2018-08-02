@@ -29,12 +29,18 @@ import org.gradoop.flink.model.api.epgm.LogicalGraph;
 import org.gradoop.flink.model.impl.operators.combination.ReduceCombination;
 import org.gradoop.flink.util.GradoopFlinkConfig;
 import org.gradoop.storage.common.io.IndexedDataSource;
+import org.gradoop.storage.common.model.EdgeSourceRow;
+import org.gradoop.storage.common.model.VertexSourceRow;
 import org.gradoop.storage.common.predicate.query.Query;
 import org.gradoop.storage.impl.accumulo.AccumuloEPGMStore;
+import org.gradoop.storage.impl.accumulo.functions.EdgeSourceMapFunction;
 import org.gradoop.storage.impl.accumulo.functions.ElementMapFunction;
+import org.gradoop.storage.impl.accumulo.functions.VertexSourceMapFunction;
 import org.gradoop.storage.impl.accumulo.io.inputformats.EdgeInputFormat;
+import org.gradoop.storage.impl.accumulo.io.inputformats.EdgeSourceInputFormat;
 import org.gradoop.storage.impl.accumulo.io.inputformats.GraphHeadInputFormat;
 import org.gradoop.storage.impl.accumulo.io.inputformats.VertexInputFormat;
+import org.gradoop.storage.impl.accumulo.io.inputformats.VertexSourceInputFormat;
 import org.gradoop.storage.impl.accumulo.predicate.filter.api.AccumuloElementFilter;
 import org.gradoop.storage.impl.accumulo.predicate.query.AccumuloQueryHolder;
 
@@ -158,6 +164,52 @@ public class AccumuloIndexedDataSource extends AccumuloBase implements
     return edgeIds
       .mapPartition(new ElementMapFunction<>(Edge.class, getAccumuloConfig(), filter))
       .returns(new TypeHint<Edge>() {
+      });
+  }
+
+  @Nonnull
+  @Override
+  public DataSet<VertexSourceRow> getEdgeIdsFromVertexIds(
+    @Nonnull VertexSourceRow.Strategy queryStrategy
+  ) {
+    return getFlinkConfig().getExecutionEnvironment()
+      .createInput(new VertexSourceInputFormat(
+        getAccumuloConfig().getAccumuloProperties(),
+        queryStrategy));
+  }
+
+  @Nonnull
+  @Override
+  public DataSet<EdgeSourceRow> getVertexIdsFromEdgeIds(
+    @Nonnull EdgeSourceRow.Strategy queryStrategy
+  ) {
+    return getFlinkConfig().getExecutionEnvironment()
+      .createInput(new EdgeSourceInputFormat(
+        getAccumuloConfig().getAccumuloProperties(),
+        queryStrategy));
+  }
+
+  @Nonnull
+  @Override
+  public DataSet<VertexSourceRow> getEdgeIdsFromVertexIds(
+    @Nonnull DataSet<GradoopId> vertexIds,
+    @Nonnull VertexSourceRow.Strategy queryStrategy
+  ) {
+    return vertexIds
+      .mapPartition(new VertexSourceMapFunction(getStore().getConfig(), queryStrategy))
+      .returns(new TypeHint<VertexSourceRow>() {
+      });
+  }
+
+  @Nonnull
+  @Override
+  public DataSet<EdgeSourceRow> getVertexIdsFromEdgeIds(
+    @Nonnull DataSet<GradoopId> edgeIds,
+    @Nonnull EdgeSourceRow.Strategy queryStrategy
+  ) {
+    return edgeIds
+      .mapPartition(new EdgeSourceMapFunction(getStore().getConfig(), queryStrategy))
+      .returns(new TypeHint<EdgeSourceRow>() {
       });
   }
 

@@ -21,9 +21,12 @@ import org.gradoop.common.model.impl.pojo.GraphHead;
 import org.gradoop.common.model.impl.pojo.Vertex;
 import org.gradoop.common.util.AsciiGraphLoader;
 import org.gradoop.flink.model.GradoopFlinkTestBase;
+import org.gradoop.flink.util.FlinkAsciiGraphLoader;
 import org.gradoop.flink.util.GradoopFlinkConfig;
 import org.gradoop.storage.config.GradoopAccumuloConfig;
+import org.gradoop.storage.impl.accumulo.io.AccumuloDataSink;
 
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
@@ -58,6 +61,42 @@ public class AccumuloStoreTestBase extends GradoopFlinkTestBase {
       graphStore.flush();
 
       context.test(loader, graphStore, GradoopFlinkConfig.createConfig(getExecutionEnvironment()));
+    }
+  }
+
+  /**
+   * Load social network graph and write it into accumulo graph
+   *
+   * @param namespace store namespace
+   * @param context loader context
+   * @throws Throwable if error
+   */
+  protected void sinkImportAndTest(
+    String namespace,
+    FlinkSocialTestContext context
+  ) throws Throwable {
+    GradoopAccumuloConfig config = AccumuloTestSuite.getAcConfig(namespace);
+    try (AccumuloEPGMStore accumuloStore = new AccumuloEPGMStore(config)) {
+      FlinkAsciiGraphLoader loader = new FlinkAsciiGraphLoader(
+        GradoopFlinkConfig.createConfig(getExecutionEnvironment()));
+
+      InputStream inputStream = getClass().getResourceAsStream(
+        GradoopTestUtils.SOCIAL_NETWORK_GDL_FILE);
+
+      loader.initDatabaseFromStream(inputStream);
+      GradoopFlinkConfig flinkConfig = GradoopFlinkConfig.createConfig(getExecutionEnvironment());
+
+      new AccumuloDataSink(accumuloStore, flinkConfig)
+        .write(flinkConfig
+          .getGraphCollectionFactory()
+          .fromCollections(
+            loader.getGraphHeads(),
+            loader.getVertices(),
+            loader.getEdges()));
+      getExecutionEnvironment().execute();
+      accumuloStore.flush();
+
+      context.test(loader, accumuloStore);
     }
   }
 
@@ -104,4 +143,12 @@ public class AccumuloStoreTestBase extends GradoopFlinkTestBase {
 
   }
 
+  public interface FlinkSocialTestContext {
+
+    void test(
+      FlinkAsciiGraphLoader loader,
+      AccumuloEPGMStore store
+    ) throws Throwable;
+
+  }
 }

@@ -21,8 +21,10 @@ import org.gradoop.storage.config.GradoopAccumuloConfig;
 import org.gradoop.storage.impl.accumulo.basic.StoreTest;
 import org.gradoop.storage.impl.accumulo.constants.GradoopAccumuloProperty;
 import org.gradoop.storage.impl.accumulo.index.EdgeIndexTest;
+import org.gradoop.storage.impl.accumulo.index.EdgeSourceIndexTest;
 import org.gradoop.storage.impl.accumulo.index.GraphIndexTest;
 import org.gradoop.storage.impl.accumulo.index.VertexIndexTest;
+import org.gradoop.storage.impl.accumulo.index.VertexSourceIndexTest;
 import org.gradoop.storage.impl.accumulo.io.IOBasicTest;
 import org.gradoop.storage.impl.accumulo.io.source.IOEdgePredicateTest;
 import org.gradoop.storage.impl.accumulo.io.source.IOGraphPredicateTest;
@@ -62,7 +64,9 @@ import java.io.File;
   //index
   GraphIndexTest.class,
   VertexIndexTest.class,
-  EdgeIndexTest.class
+  EdgeIndexTest.class,
+  VertexSourceIndexTest.class,
+  EdgeSourceIndexTest.class
 })
 public class AccumuloTestSuite {
 

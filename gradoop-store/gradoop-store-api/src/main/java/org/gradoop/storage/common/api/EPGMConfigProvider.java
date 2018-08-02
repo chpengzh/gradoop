@@ -52,4 +52,11 @@ public interface EPGMConfigProvider<C extends GradoopStoreConfig> {
    */
   String getGraphHeadName();
 
+  /**
+   * Returns the table name where incident data is stored.
+   *
+   * @return incident data table name
+   */
+  String getIncidentTableName();
+
 }

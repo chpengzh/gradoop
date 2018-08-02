@@ -38,6 +38,7 @@ import org.gradoop.common.model.api.entities.EPGMElement;
 import org.gradoop.common.model.api.entities.EPGMGraphHead;
 import org.gradoop.common.model.api.entities.EPGMVertex;
 import org.gradoop.common.model.impl.id.GradoopId;
+import org.gradoop.common.model.impl.id.GradoopIdSet;
 import org.gradoop.common.model.impl.pojo.Edge;
 import org.gradoop.common.model.impl.pojo.GraphHead;
 import org.gradoop.common.model.impl.pojo.Vertex;
@@ -46,13 +47,18 @@ import org.gradoop.storage.common.api.EPGMGraphInput;
 import org.gradoop.storage.common.api.EPGMGraphPredictableOutput;
 import org.gradoop.storage.common.iterator.ClosableIterator;
 import org.gradoop.storage.common.iterator.EmptyClosableIterator;
+import org.gradoop.storage.common.model.EdgeSourceRow;
+import org.gradoop.storage.common.model.VertexSourceRow;
 import org.gradoop.storage.common.predicate.query.ElementQuery;
 import org.gradoop.storage.common.predicate.query.Query;
 import org.gradoop.storage.config.GradoopAccumuloConfig;
 import org.gradoop.storage.impl.accumulo.constants.AccumuloTables;
 import org.gradoop.storage.impl.accumulo.constants.GradoopAccumuloProperty;
+import org.gradoop.storage.impl.accumulo.handler.AccumuloIncidentHandler;
 import org.gradoop.storage.impl.accumulo.handler.AccumuloRowHandler;
 import org.gradoop.storage.impl.accumulo.iterator.client.ClientClosableIterator;
+import org.gradoop.storage.impl.accumulo.iterator.client.EdgeSourceRowIterator;
+import org.gradoop.storage.impl.accumulo.iterator.client.VertexSourceRowIterator;
 import org.gradoop.storage.impl.accumulo.iterator.tserver.GradoopEdgeIterator;
 import org.gradoop.storage.impl.accumulo.iterator.tserver.GradoopGraphHeadIterator;
 import org.gradoop.storage.impl.accumulo.iterator.tserver.GradoopVertexIterator;
@@ -64,8 +70,10 @@ import org.slf4j.LoggerFactory;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -115,6 +123,11 @@ public class AccumuloEPGMStore implements
   private final BatchWriter edgeWriter;
 
   /**
+   * Batch writer for incident table
+   */
+  private final BatchWriter incidentWriter;
+
+  /**
    * Auto flush flag, default false
    */
   private volatile boolean autoFlush;
@@ -139,6 +152,7 @@ public class AccumuloEPGMStore implements
       graphWriter = conn.createBatchWriter(getGraphHeadName(), new BatchWriterConfig());
       vertexWriter = conn.createBatchWriter(getVertexTableName(), new BatchWriterConfig());
       edgeWriter = conn.createBatchWriter(getEdgeTableName(), new BatchWriterConfig());
+      incidentWriter = conn.createBatchWriter(getIncidentTableName(), new BatchWriterConfig());
     } catch (TableNotFoundException e) {
       throw new IllegalStateException(e); //should not be here
     }
@@ -179,18 +193,25 @@ public class AccumuloEPGMStore implements
   }
 
   @Override
-  public void writeGraphHead(@Nonnull EPGMGraphHead record) {
+  public String getIncidentTableName() {
+    return config.getIncidentTable();
+  }
+
+  @Override
+  public void writeGraphHead(@Nonnull EPGMGraphHead record) throws IOException {
     writeRecord(record, graphWriter, config.getGraphHandler());
   }
 
   @Override
-  public void writeVertex(@Nonnull EPGMVertex record) {
+  public void writeVertex(@Nonnull EPGMVertex record) throws IOException {
     writeRecord(record, vertexWriter, config.getVertexHandler());
   }
 
   @Override
-  public void writeEdge(@Nonnull EPGMEdge record) {
+  public void writeEdge(@Nonnull EPGMEdge record) throws IOException {
     writeRecord(record, edgeWriter, config.getEdgeHandler());
+    writeIncome(record, incidentWriter, config.getIncidentHandler());
+    writeOutcome(record, incidentWriter, config.getIncidentHandler());
   }
 
   @Override
@@ -204,6 +225,7 @@ public class AccumuloEPGMStore implements
       graphWriter.flush();
       vertexWriter.flush();
       edgeWriter.flush();
+      incidentWriter.flush();
     } catch (MutationsRejectedException e) {
       throw new RuntimeException(e);
     }
@@ -212,9 +234,11 @@ public class AccumuloEPGMStore implements
   @Override
   public void close() {
     try {
+      flush();
       graphWriter.close();
       vertexWriter.close();
       edgeWriter.close();
+      incidentWriter.close();
     } catch (MutationsRejectedException e) {
       throw new RuntimeException(e);
     }
@@ -349,6 +373,102 @@ public class AccumuloEPGMStore implements
     }
   }
 
+  @Nonnull
+  @Override
+  public ClosableIterator<VertexSourceRow> getEdgeIdsFromVertexIds(
+    @Nonnull GradoopIdSet vertexSeeds,
+    @Nonnull VertexSourceRow.Strategy strategy
+  ) throws IOException {
+    if (vertexSeeds.isEmpty()) {
+      return new EmptyClosableIterator<>();
+    }
+
+    Authorizations auth = GradoopAccumuloProperty.ACCUMULO_AUTHORIZATIONS
+      .get(getConfig().getAccumuloProperties());
+    int batchSize = GradoopAccumuloProperty.GRADOOP_BATCH_SCANNER_THREADS
+      .get(getConfig().getAccumuloProperties());
+    try {
+      BatchScanner scanner = conn.createBatchScanner(getIncidentTableName(), auth, batchSize);
+      List<Range> scanRanges = new ArrayList<>();
+      for (GradoopId id : vertexSeeds) {
+        switch (strategy) {
+        case INCOME:
+          scanRanges.add(Range.exact(id.toString(), AccumuloTables.KEY.EDGE_IN));
+          break;
+        case OUTCOME:
+          scanRanges.add(Range.exact(id.toString(), AccumuloTables.KEY.EDGE_OUT));
+          break;
+        case BOTH:
+          scanRanges.add(Range.exact(id.toString(), AccumuloTables.KEY.EDGE_IN));
+          scanRanges.add(Range.exact(id.toString(), AccumuloTables.KEY.EDGE_OUT));
+          break;
+        default:
+          break;
+        }
+      }
+
+      if (!scanRanges.isEmpty()) {
+        scanner.setRanges(Range.mergeOverlapping(scanRanges));
+        return new VertexSourceRowIterator(scanner,
+          getConfig().getIncidentHandler(),
+          batchSize);
+      } else {
+        return new EmptyClosableIterator<>();
+      }
+
+    } catch (TableNotFoundException e) {
+      throw new IOException(e);
+    }
+  }
+
+  @Nonnull
+  @Override
+  public ClosableIterator<EdgeSourceRow> getVertexIdsFromEdgeIds(
+    @Nonnull GradoopIdSet edgeSeeds,
+    @Nonnull EdgeSourceRow.Strategy strategy
+  ) throws IOException {
+    if (edgeSeeds.isEmpty()) {
+      return new EmptyClosableIterator<>();
+    }
+
+    Authorizations auth = GradoopAccumuloProperty.ACCUMULO_AUTHORIZATIONS
+      .get(getConfig().getAccumuloProperties());
+    int batchSize = GradoopAccumuloProperty.GRADOOP_BATCH_SCANNER_THREADS
+      .get(getConfig().getAccumuloProperties());
+    try {
+      BatchScanner scanner = conn.createBatchScanner(getEdgeTableName(), auth, batchSize);
+      List<Range> scanRanges = new ArrayList<>();
+      for (GradoopId id : edgeSeeds) {
+        switch (strategy) {
+        case SOURCE:
+          scanRanges.add(Range.exact(id.toString(), AccumuloTables.KEY.SOURCE));
+          break;
+        case TARGET:
+          scanRanges.add(Range.exact(id.toString(), AccumuloTables.KEY.TARGET));
+          break;
+        case BOTH:
+          scanRanges.add(Range.exact(id.toString(), AccumuloTables.KEY.SOURCE));
+          scanRanges.add(Range.exact(id.toString(), AccumuloTables.KEY.TARGET));
+          break;
+        default:
+          break;
+        }
+      }
+
+      if (!scanRanges.isEmpty()) {
+        scanner.setRanges(Range.mergeOverlapping(scanRanges));
+        return new EdgeSourceRowIterator(scanner,
+          getConfig().getIncidentHandler(),
+          batchSize);
+      } else {
+        return new EmptyClosableIterator<>();
+      }
+
+    } catch (TableNotFoundException e) {
+      throw new IOException(e);
+    }
+  }
+
   /**
    * Write an EPGM Element instance into table
    *
@@ -360,18 +480,65 @@ public class AccumuloEPGMStore implements
   private <T extends EPGMElement> void writeRecord(
     @Nonnull T record,
     @Nonnull BatchWriter writer,
-    @Nonnull AccumuloRowHandler handler
-  ) {
+    @Nonnull AccumuloRowHandler<?, T> handler
+  ) throws IOException {
     Mutation mutation = new Mutation(record.getId().toString());
-    //noinspection unchecked
     mutation = handler.writeRow(mutation, record);
+    enqueueMutation(writer, mutation);
+  }
+
+  /**
+   * Write external incident relation index ({vertex-id, income, edge-id})
+   *
+   * @param record  gradoop EPGM element
+   * @param writer  accumulo batch writer
+   * @param handler accumulo row handler
+   */
+  private void writeIncome(
+    @Nonnull EPGMEdge record,
+    @Nonnull BatchWriter writer,
+    @Nonnull AccumuloIncidentHandler handler
+  ) throws IOException {
+    Mutation mutation = new Mutation(record.getTargetId().toString());
+    mutation = handler.writeIncomeEdge(mutation, record);
+    enqueueMutation(writer, mutation);
+  }
+
+  /**
+   * Write external incident relation index ({vertex-id, outcome, edge-id})
+   *
+   * @param record  gradoop EPGM element
+   * @param writer  accumulo batch writer
+   * @param handler accumulo row handler
+   */
+  private void writeOutcome(
+    @Nonnull EPGMEdge record,
+    @Nonnull BatchWriter writer,
+    @Nonnull AccumuloIncidentHandler handler
+  ) throws IOException {
+    Mutation mutation = new Mutation(record.getSourceId().toString());
+    mutation = handler.writeOutcomeEdge(mutation, record);
+    enqueueMutation(writer, mutation);
+  }
+
+  /**
+   * Enqueue mutation execution
+   *
+   * @param writer batch writer instance
+   * @param mutation mutation to be execute
+   * @throws IOException if mutation is rejected by remote
+   */
+  private void enqueueMutation(
+    @Nonnull BatchWriter writer,
+    @Nonnull Mutation mutation
+  ) throws IOException {
     try {
       writer.addMutation(mutation);
       if (autoFlush) {
         writer.flush();
       }
     } catch (MutationsRejectedException e) {
-      throw new RuntimeException(e);
+      throw new IOException(e);
     }
   }
 
@@ -449,7 +616,7 @@ public class AccumuloEPGMStore implements
       }
     }
     for (String table : new String[] {
-      getVertexTableName(), getEdgeTableName(), getGraphHeadName()
+      getVertexTableName(), getEdgeTableName(), getGraphHeadName(), getIncidentTableName()
     }) {
       try {
         if (!conn.tableOperations().exists(table)) {
